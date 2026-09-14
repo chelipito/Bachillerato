@@ -200,6 +200,15 @@
   .scoreboard-row .score{font-family:'Baloo 2', sans-serif; font-size:20px; color:var(--teal-dark);}
   .top1{background:var(--mustard);}
 
+  .overlay-backdrop{
+    position:fixed; inset:0; background:rgba(32,36,31,0.55);
+    display:flex; align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .overlay-card{
+    background:var(--paper-2); border:2px solid var(--ink); border-radius:var(--radius-lg);
+    box-shadow:var(--shadow); padding:22px; max-width:420px; width:100%; max-height:80vh; overflow-y:auto;
+  }
+
   .banner{
     background:var(--coral); color:#fff; border:2px solid #8f2e1c; border-radius:var(--radius-md);
     padding:12px 16px; margin-bottom:14px; font-weight:600; text-align:center;
@@ -242,6 +251,10 @@ if (FIREBASE_READY) {
 --------------------------------------------------------- */
 const LETTERS = "A,B,C,D,E,F,G,H,I,J,K,L,M,N,Ñ,O,P,Q,R,S,T,U,V,W,X,Y,Z".split(",");
 const DEFAULT_CATEGORIES = ["Nombre", "Ciudad o país", "Fruta o verdura", "Marca", "Color", "Animal"];
+const STOP_GRACE_MS = 8000; // segundos de gracia después de que alguien dice ¡BASTA!
+const SPIN_MS = 1300;       // cuánto rato gira la letra antes de mostrar cuál salió
+const COUNTDOWN_NUMS_MS = 3000; // duración del 3-2-1 después de que la letra se revela
+const COUNTDOWN_TOTAL_MS = SPIN_MS + COUNTDOWN_NUMS_MS;
 
 function normalize(str){
   return (str || "")
@@ -280,6 +293,7 @@ const state = {
   overrides: {},        // overrides manuales de validez { round: { playerId: { cat: bool } } }
   revealData: { answers: {}, overrides: {} }, // datos cargados solo al llegar a la fase reveal
   overridesRef: null,   // referencia activa al listener de overrides (para poder cerrarla)
+  showScoreboard: false,
   formCategories: [...DEFAULT_CATEGORIES],
   roundDuration: 60,
   countdownTimer: null,
@@ -330,12 +344,46 @@ function render(){
     localGame: screenLocalGame,
   };
   app.appendChild(screens[state.screen]());
+
+  if (state.showScoreboard) app.appendChild(renderScoreboardOverlay());
+}
+
+function renderScoreboardOverlay(){
+  const backdrop = document.createElement('div');
+  backdrop.className = 'overlay-backdrop';
+  const players = Object.entries(state.players || {});
+  const sorted = players.slice().sort((a,b)=> (b[1].score||0)-(a[1].score||0));
+  const rows = sorted.map(([pid,p],i)=>`
+    <div class="scoreboard-row ${i===0?'top1':''}"><span>${escapeHtml(p.name)}</span><span class="score">${p.score||0}</span></div>
+  `).join('');
+  backdrop.innerHTML = `
+    <div class="overlay-card">
+      <div class="space-between" style="margin-bottom:10px;">
+        <h3 style="margin:0;">Marcador</h3>
+        <button class="ghost" id="btn-close-scoreboard">✕</button>
+      </div>
+      ${rows || '<p class="muted">Todavía no hay puntos.</p>'}
+    </div>
+  `;
+  backdrop.onclick = (e)=>{ if (e.target === backdrop) { state.showScoreboard=false; render(); } };
+  setTimeout(()=>{
+    document.getElementById('btn-close-scoreboard').onclick = ()=>{ state.showScoreboard=false; render(); };
+  });
+  return backdrop;
 }
 
 function brandHeader(){
   const wrap = document.createElement('div');
   wrap.className = 'brand';
   wrap.innerHTML = `<div class="tile">B</div><div><h1>Bachillerato</h1><p>el clásico juego de las letras</p></div>`;
+  if (state.mode === 'online' && state.room && Object.keys(state.players||{}).length>0){
+    const btn = document.createElement('button');
+    btn.className = 'ghost';
+    btn.style.marginLeft = 'auto';
+    btn.textContent = '🏆 Marcador';
+    btn.onclick = ()=>{ state.showScoreboard = true; render(); };
+    wrap.appendChild(btn);
+  }
   return wrap;
 }
 
@@ -528,6 +576,7 @@ function subscribeRoom(code){
 }
 
 let lastRevealRound = null;
+let lastCountdownRound = null;
 function onRoomUpdate(){
   const phase = state.room ? state.room.phase : 'lobby';
   if (state.screen === 'lobby' && phase !== 'lobby') {
@@ -535,6 +584,11 @@ function onRoomUpdate(){
   }
   if (state.screen === 'game' && phase === 'lobby') {
     state.screen = 'lobby';
+  }
+
+  if (phase === 'countdown' && lastCountdownRound !== state.room.roundNumber){
+    lastCountdownRound = state.room.roundNumber;
+    state.answersLocalDraft = {};
   }
 
   if (phase === 'reveal' && lastRevealRound !== state.room.roundNumber){
@@ -587,9 +641,18 @@ function screenLobby(){
     <h3>Categorías</h3>
     <div class="row" style="margin-bottom:16px;">${catsPreview}</div>
     <p class="muted small">Ronda: ${state.room.roundDuration}s</p>
-    ${state.isHost ? `<button class="primary block" id="btn-start-game" ${players.length<1?'disabled':''}>Girar la primera letra</button>` : `<p class="muted">Esperando a que el anfitrión inicie la partida…</p>`}
+    ${state.isHost ? `<button class="primary block" id="btn-start-game" ${players.length<1?'disabled':''}>${state.room.roundNumber>0?'Girar la siguiente letra':'Girar la primera letra'}</button>` : `<p class="muted">Esperando a que el anfitrión ${state.room.roundNumber>0?'siga con la próxima ronda':'inicie la partida'}…</p>`}
   `);
   wrap.appendChild(c);
+
+  if (state.room.roundNumber > 0){
+    const sorted = players.slice().sort((a,b)=> (b[1].score||0) - (a[1].score||0));
+    const scoreRows = sorted.map(([pid,p],i)=>`
+      <div class="scoreboard-row ${i===0?'top1':''}"><span>${escapeHtml(p.name)}</span><span class="score">${p.score||0}</span></div>
+    `).join('');
+    wrap.appendChild(card(`<h3>Marcador</h3>${scoreRows}`));
+  }
+
   wrap.appendChild(backButton(true));
 
   setTimeout(()=>{
@@ -627,7 +690,7 @@ function spinLetter(){
     // fijamos el fin de cuenta regresiva 3s después, una vez conocemos el timestamp real
     db.ref('rooms/' + state.roomCode + '/countdownEndsAt').once('value').then(s=>{
       const base = s.val() || Date.now();
-      db.ref('rooms/' + state.roomCode).update({ countdownEndsAt: base + 3000 });
+      db.ref('rooms/' + state.roomCode).update({ countdownEndsAt: base + COUNTDOWN_TOTAL_MS });
     });
   });
 }
@@ -670,7 +733,7 @@ function requestStop(){
   db.ref('rooms/' + state.roomCode).update({
     phase: 'stopping',
     stopRequestedBy: state.playerId,
-    stopEndsAt: Date.now() + 3000
+    stopEndsAt: Date.now() + STOP_GRACE_MS
   });
 }
 
@@ -691,21 +754,30 @@ function screenGame(){
 
 function renderCountdown(){
   const wrap = document.createElement('div');
-  const secsLeft = Math.max(0, Math.ceil(((state.room.countdownEndsAt||0) - Date.now())/1000));
+  const remaining = (state.room.countdownEndsAt||0) - Date.now();
+  const isSpinning = remaining > COUNTDOWN_NUMS_MS;
+  const displayLetter = isSpinning ? LETTERS[Math.floor(Math.random()*LETTERS.length)] : state.room.currentLetter;
+  const secsLeft = Math.max(0, Math.ceil(Math.min(remaining, COUNTDOWN_NUMS_MS)/1000));
   wrap.innerHTML = `
     <div class="letter-stage">
-      <div class="big-letter spinning">${state.room.currentLetter||'?'}</div>
-      <div class="countdown-num" id="countdown-num">${secsLeft>0?secsLeft:'¡YA!'}</div>
-      <p class="muted">Prepárate para escribir con la letra <strong>${state.room.currentLetter}</strong></p>
+      <div class="big-letter spinning" id="big-letter-tile">${displayLetter||'?'}</div>
+      <div class="countdown-num" id="countdown-num">${isSpinning ? '' : (secsLeft>0?secsLeft:'¡YA!')}</div>
+      <p class="muted" id="countdown-msg">${isSpinning ? 'Girando la letra…' : 'Prepárate para escribir con la letra <strong>'+escapeHtml(state.room.currentLetter)+'</strong>'}</p>
     </div>
   `;
+  if (isSpinning){
+    const msUntilNumbersStart = remaining - COUNTDOWN_NUMS_MS;
+    setTimeout(()=>{
+      if (state.screen==='game' && state.room && state.room.phase==='countdown') render();
+    }, Math.max(msUntilNumbersStart, 50));
+  }
   return wrap;
 }
 
 function renderWriting(){
   const wrap = document.createElement('div');
   const endsAt = state.room.phase === 'stopping' ? state.room.stopEndsAt : state.room.writingEndsAt;
-  const totalMs = state.room.phase === 'stopping' ? 3000 : state.room.roundDuration*1000;
+  const totalMs = state.room.phase === 'stopping' ? STOP_GRACE_MS : state.room.roundDuration*1000;
   const remainingMs = Math.max(0, (endsAt||0) - Date.now());
   const pct = Math.max(0, Math.min(100, (remainingMs/totalMs)*100));
   const secsLeft = Math.ceil(remainingMs/1000);
@@ -826,7 +898,7 @@ function renderReveal(){
 
   const c = card(`
     <h2>Letra ${state.room.currentLetter} — resultados</h2>
-    <p class="muted small">Toca una celda para marcarla válida o inválida a mano.</p>
+    <p class="muted small">🟩 única y válida (10 pts) · 🟨 repetida (5 pts) · 🟥 inválida o vacía (0 pts). Toca una celda para corregirla a mano.</p>
     <div style="overflow-x:auto;">
       <table class="reveal-table">
         <thead><tr><th></th>${headerCells}</tr></thead>
@@ -1069,12 +1141,17 @@ function uiTick(){
   if (phase === 'countdown'){
     const el = document.getElementById('countdown-num');
     if (el){
-      const secsLeft = Math.max(0, Math.ceil(((state.room.countdownEndsAt||0) - Date.now())/1000));
-      el.textContent = secsLeft>0 ? secsLeft : '¡YA!';
+      const remaining = (state.room.countdownEndsAt||0) - Date.now();
+      if (remaining > COUNTDOWN_NUMS_MS){
+        el.textContent = '';
+      } else {
+        const secsLeft = Math.max(0, Math.ceil(remaining/1000));
+        el.textContent = secsLeft>0 ? secsLeft : '¡YA!';
+      }
     }
   } else if (phase === 'writing' || phase === 'stopping'){
     const endsAt = phase === 'stopping' ? state.room.stopEndsAt : state.room.writingEndsAt;
-    const totalMs = phase === 'stopping' ? 3000 : state.room.roundDuration*1000;
+    const totalMs = phase === 'stopping' ? STOP_GRACE_MS : state.room.roundDuration*1000;
     const remainingMs = Math.max(0, (endsAt||0) - Date.now());
     const pct = Math.max(0, Math.min(100, (remainingMs/totalMs)*100));
     const secsLeft = Math.ceil(remainingMs/1000);
@@ -1085,6 +1162,18 @@ function uiTick(){
   }
 }
 setInterval(uiTick, 250);
+
+function spinTick(){
+  if (state.mode !== 'online' || state.screen !== 'game' || !state.room) return;
+  if (state.room.phase !== 'countdown') return;
+  const remaining = (state.room.countdownEndsAt||0) - Date.now();
+  const el = document.getElementById('big-letter-tile');
+  if (!el) return;
+  el.textContent = remaining > COUNTDOWN_NUMS_MS
+    ? LETTERS[Math.floor(Math.random()*LETTERS.length)]
+    : state.room.currentLetter;
+}
+setInterval(spinTick, 90);
 
 render();
 </script>
