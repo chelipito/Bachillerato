@@ -294,6 +294,7 @@ const state = {
   revealData: { answers: {}, overrides: {} }, // datos cargados solo al llegar a la fase reveal
   overridesRef: null,   // referencia activa al listener de overrides (para poder cerrarla)
   showScoreboard: false,
+  lastPhase: null,
   formCategories: [...DEFAULT_CATEGORIES],
   roundDuration: 60,
   countdownTimer: null,
@@ -579,6 +580,9 @@ let lastRevealRound = null;
 let lastCountdownRound = null;
 function onRoomUpdate(){
   const phase = state.room ? state.room.phase : 'lobby';
+  const prevPhase = state.lastPhase;
+  state.lastPhase = phase;
+
   if (state.screen === 'lobby' && phase !== 'lobby') {
     state.screen = 'game';
   }
@@ -600,8 +604,27 @@ function onRoomUpdate(){
     state.overridesRef = null;
   }
 
+  // Cuando alguien dice ¡BASTA! solo cambiamos de 'writing' a 'stopping': evitamos
+  // reconstruir el formulario de respuestas (eso cerraría el teclado en el celular),
+  // y en vez de eso solo actualizamos el aviso y desactivamos el botón.
+  if (prevPhase === 'writing' && phase === 'stopping' && document.getElementById('writing-form')){
+    patchStoppingBanner();
+    handlePhaseTimers();
+    return;
+  }
+
   render();
   handlePhaseTimers();
+}
+
+function patchStoppingBanner(){
+  const bastaBtn = document.getElementById('btn-basta');
+  if (bastaBtn) bastaBtn.disabled = true;
+  const bannerHost = document.getElementById('stop-banner-host');
+  if (bannerHost){
+    const who = escapeHtml((state.players[state.room.stopRequestedBy]||{}).name || 'alguien');
+    bannerHost.innerHTML = `<div class="banner">¡${who} gritó BASTA! Últimos segundos…</div>`;
+  }
 }
 
 function enterReveal(round){
@@ -701,28 +724,36 @@ function handlePhaseTimers(){
   if (!state.room) return;
   const phase = state.room.phase;
 
-  if (phase === 'countdown' && state.isHost){
+  // Nota: cualquier jugador conectado puede disparar el avance de fase (no solo el
+  // anfitrión), para que el juego no se quede pegado si su pantalla está en segundo
+  // plano. Cada callback revisa que la fase no haya cambiado ya antes de escribir.
+  if (phase === 'countdown'){
     const remaining = (state.room.countdownEndsAt||0) - Date.now();
+    const roundAtSchedule = state.room.roundNumber;
     state.countdownTimer = setTimeout(()=>{
-      const roundNumber = state.room.roundNumber;
+      if (!state.room || state.room.phase !== 'countdown' || state.room.roundNumber !== roundAtSchedule) return;
       db.ref('rooms/' + state.roomCode).update({
         phase: 'writing',
         writingEndsAt: Date.now() + (state.room.roundDuration*1000)
       });
-      db.ref('answers/' + state.roomCode + '/' + roundNumber).remove();
+      db.ref('answers/' + state.roomCode + '/' + roundAtSchedule).remove();
     }, Math.max(remaining, 100));
   }
 
-  if (phase === 'writing' && state.isHost){
+  if (phase === 'writing'){
     const remaining = (state.room.writingEndsAt||0) - Date.now();
+    const roundAtSchedule = state.room.roundNumber;
     state.writingTimer = setTimeout(()=>{
+      if (!state.room || state.room.phase !== 'writing' || state.room.roundNumber !== roundAtSchedule) return;
       db.ref('rooms/' + state.roomCode).update({ phase: 'reveal' });
     }, Math.max(remaining, 100));
   }
 
-  if (phase === 'stopping' && state.isHost){
+  if (phase === 'stopping'){
     const remaining = (state.room.stopEndsAt||0) - Date.now();
+    const roundAtSchedule = state.room.roundNumber;
     state.writingTimer = setTimeout(()=>{
+      if (!state.room || state.room.phase !== 'stopping' || state.room.roundNumber !== roundAtSchedule) return;
       db.ref('rooms/' + state.roomCode).update({ phase: 'reveal' });
     }, Math.max(remaining, 100));
   }
@@ -788,22 +819,22 @@ function renderWriting(){
 
   const catInputs = (state.room.categories||[]).map((cat,i)=>`
     <label for="ans-${i}">${escapeHtml(cat)} con "${state.room.currentLetter}"</label>
-    <input type="text" id="ans-${i}" data-cat="${escapeHtml(cat)}" value="${escapeHtml(state.answersLocalDraft[cat]||'')}" ${state.room.phase==='stopping'?'':''}>
+    <input type="text" id="ans-${i}" data-cat="${escapeHtml(cat)}" value="${escapeHtml(state.answersLocalDraft[cat]||'')}">
   `).join('');
 
   wrap.innerHTML = `
     <div class="letter-stage" style="padding-top:6px;">
       <div class="big-letter" style="width:90px;height:90px;font-size:52px;">${state.room.currentLetter}</div>
     </div>
-    ${stopBanner}
-    <div class="card">
+    <div id="stop-banner-host">${stopBanner}</div>
+    <div class="card" id="writing-form">
       <div class="space-between">
         <strong id="timer-secs">${secsLeft}s</strong>
         <span class="muted small">ronda ${state.room.roundNumber}</span>
       </div>
       <div class="timerbar-track"><div class="timerbar-fill" id="timer-fill" style="width:${pct}%"></div></div>
       <div style="margin-top:14px;">${catInputs}</div>
-      <button class="warn block" id="btn-basta" ${state.room.phase==='stopping'?'disabled':''}>¡BASTA!</button>
+      <button class="warn block" id="btn-basta" ${state.room.phase==='stopping'?'disabled':''}>¡BASTA! (ya terminé)</button>
     </div>
   `;
 
