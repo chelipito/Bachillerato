@@ -278,6 +278,8 @@ const state = {
   players: {},          // snapshot de /rooms/{code}/players
   answersLocalDraft: {},// respuestas que estoy escribiendo (categoria -> texto)
   overrides: {},        // overrides manuales de validez { round: { playerId: { cat: bool } } }
+  revealData: { answers: {}, overrides: {} }, // datos cargados solo al llegar a la fase reveal
+  overridesRef: null,   // referencia activa al listener de overrides (para poder cerrarla)
   formCategories: [...DEFAULT_CATEGORIES],
   roundDuration: 60,
   countdownTimer: null,
@@ -525,6 +527,7 @@ function subscribeRoom(code){
   });
 }
 
+let lastRevealRound = null;
 function onRoomUpdate(){
   const phase = state.room ? state.room.phase : 'lobby';
   if (state.screen === 'lobby' && phase !== 'lobby') {
@@ -533,8 +536,32 @@ function onRoomUpdate(){
   if (state.screen === 'game' && phase === 'lobby') {
     state.screen = 'lobby';
   }
+
+  if (phase === 'reveal' && lastRevealRound !== state.room.roundNumber){
+    lastRevealRound = state.room.roundNumber;
+    enterReveal(state.room.roundNumber);
+  }
+  if (phase !== 'reveal' && state.overridesRef){
+    state.overridesRef.off();
+    state.overridesRef = null;
+  }
+
   render();
   handlePhaseTimers();
+}
+
+function enterReveal(round){
+  const code = state.roomCode;
+  db.ref('answers/' + code + '/' + round).once('value').then(snap=>{
+    state.revealData.answers = snap.val() || {};
+    render();
+  });
+  if (state.overridesRef) state.overridesRef.off();
+  state.overridesRef = db.ref('overrides/' + code + '/' + round);
+  state.overridesRef.on('value', snap=>{
+    state.revealData.overrides = snap.val() || {};
+    if (state.room && state.room.phase === 'reveal') render();
+  });
 }
 
 /* ---------------------------------------------------------
@@ -619,7 +646,7 @@ function handlePhaseTimers(){
         phase: 'writing',
         writingEndsAt: Date.now() + (state.room.roundDuration*1000)
       });
-      db.ref('rooms/' + state.roomCode + '/rounds/' + roundNumber + '/answers').remove();
+      db.ref('answers/' + state.roomCode + '/' + roundNumber).remove();
     }, Math.max(remaining, 100));
   }
 
@@ -668,13 +695,10 @@ function renderCountdown(){
   wrap.innerHTML = `
     <div class="letter-stage">
       <div class="big-letter spinning">${state.room.currentLetter||'?'}</div>
-      <div class="countdown-num">${secsLeft>0?secsLeft:'¡YA!'}</div>
+      <div class="countdown-num" id="countdown-num">${secsLeft>0?secsLeft:'¡YA!'}</div>
       <p class="muted">Prepárate para escribir con la letra <strong>${state.room.currentLetter}</strong></p>
     </div>
   `;
-  setTimeout(()=>{
-    if (secsLeft>0) setTimeout(render, 300);
-  });
   return wrap;
 }
 
@@ -702,19 +726,16 @@ function renderWriting(){
     ${stopBanner}
     <div class="card">
       <div class="space-between">
-        <strong>${secsLeft}s</strong>
+        <strong id="timer-secs">${secsLeft}s</strong>
         <span class="muted small">ronda ${state.room.roundNumber}</span>
       </div>
-      <div class="timerbar-track"><div class="timerbar-fill" style="width:${pct}%"></div></div>
+      <div class="timerbar-track"><div class="timerbar-fill" id="timer-fill" style="width:${pct}%"></div></div>
       <div style="margin-top:14px;">${catInputs}</div>
       <button class="warn block" id="btn-basta" ${state.room.phase==='stopping'?'disabled':''}>¡BASTA!</button>
     </div>
   `;
 
   setTimeout(()=>{
-    (state.room.categories||[]).forEach((cat)=>{
-      const el = document.getElementById('ans-' + (state.room.categories.indexOf(cat)));
-    });
     document.querySelectorAll('[data-cat]').forEach(inp=>{
       inp.oninput = ()=>{
         const cat = inp.getAttribute('data-cat');
@@ -723,7 +744,6 @@ function renderWriting(){
       };
     });
     document.getElementById('btn-basta').onclick = requestStop;
-    setTimeout(render, 300);
   });
   return wrap;
 }
@@ -733,7 +753,7 @@ function saveMyAnswers(){
   clearTimeout(saveAnswersTimeout);
   saveAnswersTimeout = setTimeout(()=>{
     const round = state.room.roundNumber;
-    db.ref('rooms/'+state.roomCode+'/rounds/'+round+'/answers/'+state.playerId).set(state.answersLocalDraft);
+    db.ref('answers/'+state.roomCode+'/'+round+'/'+state.playerId).set(state.answersLocalDraft);
   }, 250);
 }
 
@@ -741,11 +761,10 @@ function saveMyAnswers(){
    REVEAL — calcular validez y puntajes
 --------------------------------------------------------- */
 function computeScoring(){
-  const round = state.room.roundNumber;
   const cats = state.room.categories || [];
   const letter = normalize(state.room.currentLetter);
-  const answersByPlayer = (state.room.rounds && state.room.rounds[round] && state.room.rounds[round].answers) || {};
-  const overridesByPlayer = (state.room.rounds && state.room.rounds[round] && state.room.rounds[round].overrides) || {};
+  const answersByPlayer = (state.revealData && state.revealData.answers) || {};
+  const overridesByPlayer = (state.revealData && state.revealData.overrides) || {};
   const playerIds = Object.keys(state.players);
 
   const grid = {}; // cat -> { playerId: {text, status, points} }
@@ -784,7 +803,7 @@ function computeScoring(){
 function toggleOverride(pid, cat, currentStatus){
   const round = state.room.roundNumber;
   const newVal = currentStatus === 'invalid' ? 'valid' : 'invalid';
-  db.ref('rooms/'+state.roomCode+'/rounds/'+round+'/overrides/'+pid+'/'+cat).set(newVal);
+  db.ref('overrides/'+state.roomCode+'/'+round+'/'+pid+'/'+cat).set(newVal);
 }
 
 function renderReveal(){
@@ -1043,6 +1062,29 @@ function backButton(leaveRoom){
   };
   return b;
 }
+
+function uiTick(){
+  if (state.mode !== 'online' || state.screen !== 'game' || !state.room) return;
+  const phase = state.room.phase;
+  if (phase === 'countdown'){
+    const el = document.getElementById('countdown-num');
+    if (el){
+      const secsLeft = Math.max(0, Math.ceil(((state.room.countdownEndsAt||0) - Date.now())/1000));
+      el.textContent = secsLeft>0 ? secsLeft : '¡YA!';
+    }
+  } else if (phase === 'writing' || phase === 'stopping'){
+    const endsAt = phase === 'stopping' ? state.room.stopEndsAt : state.room.writingEndsAt;
+    const totalMs = phase === 'stopping' ? 3000 : state.room.roundDuration*1000;
+    const remainingMs = Math.max(0, (endsAt||0) - Date.now());
+    const pct = Math.max(0, Math.min(100, (remainingMs/totalMs)*100));
+    const secsLeft = Math.ceil(remainingMs/1000);
+    const fillEl = document.getElementById('timer-fill');
+    const secsEl = document.getElementById('timer-secs');
+    if (fillEl) fillEl.style.width = pct + '%';
+    if (secsEl) secsEl.textContent = secsLeft + 's';
+  }
+}
+setInterval(uiTick, 250);
 
 render();
 </script>
