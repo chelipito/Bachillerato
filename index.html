@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bachillerato — el juego de las letras</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- ==========================================================
+     FIREBASE — reemplaza estos valores por los de TU proyecto.
+     Ver instrucciones abajo del todo del archivo / en el chat.
+     ========================================================== -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<style>
+  :root{
+    --ink:#20241f;
+    --paper:#f3ede0;
+    --paper-2:#e9e0cd;
+    --teal:#1f6f6b;
+    --teal-dark:#154d4a;
+    --mustard:#e3a730;
+    --coral:#e1573d;
+    --plum:#6a3d5c;
+    --line: rgba(32,36,31,0.14);
+    --radius-lg: 22px;
+    --radius-md: 14px;
+    --radius-sm: 8px;
+    --shadow: 0 6px 0 rgba(32,36,31,0.9);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(32,36,31,0.06) 1px, transparent 0);
+    background-size: 22px 22px;
+    color:var(--ink);
+    font-family:'Work Sans', sans-serif;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+  }
+  #app{
+    width:100%;
+    max-width:620px;
+    padding:28px 18px 60px;
+  }
+  h1,h2,h3{
+    font-family:'Baloo 2', sans-serif;
+    margin:0 0 6px;
+    line-height:1.05;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:28px;
+  }
+  .brand .tile{
+    font-family:'Baloo 2', sans-serif;
+    font-weight:800;
+    font-size:30px;
+    background:var(--ink);
+    color:var(--paper);
+    width:46px;height:46px;
+    border-radius:var(--radius-sm);
+    display:flex;align-items:center;justify-content:center;
+    transform:rotate(-6deg);
+    box-shadow:var(--shadow);
+  }
+  .brand h1{font-size:26px;}
+  .brand p{margin:0;font-size:13px;color:var(--teal-dark);font-weight:600;}
+
+  .card{
+    background:var(--paper-2);
+    border:2px solid var(--ink);
+    border-radius:var(--radius-lg);
+    box-shadow:var(--shadow);
+    padding:22px;
+    margin-bottom:18px;
+  }
+  .card + .card{margin-top:0;}
+
+  button{
+    font-family:'Work Sans', sans-serif;
+    font-weight:600;
+    font-size:15px;
+    border:2px solid var(--ink);
+    border-radius:999px;
+    padding:12px 22px;
+    background:var(--paper);
+    color:var(--ink);
+    cursor:pointer;
+    box-shadow: 0 4px 0 var(--ink);
+    transition: transform .05s ease;
+  }
+  button:active{transform:translateY(3px); box-shadow:0 1px 0 var(--ink);}
+  button.primary{background:var(--teal); color:#fff; border-color:var(--teal-dark); box-shadow:0 4px 0 var(--teal-dark);}
+  button.warn{background:var(--coral); color:#fff; border-color:#8f2e1c; box-shadow:0 4px 0 #8f2e1c;}
+  button.ghost{background:transparent; box-shadow:none;}
+  button:disabled{opacity:.45; cursor:not-allowed; box-shadow:none;}
+  button.block{width:100%;}
+  .row{display:flex; gap:10px; flex-wrap:wrap;}
+
+  label{font-size:13px; font-weight:600; color:var(--teal-dark); display:block; margin-bottom:6px;}
+  input[type=text], input[type=number], select{
+    width:100%;
+    padding:11px 13px;
+    border:2px solid var(--ink);
+    border-radius:var(--radius-sm);
+    font-family:'Work Sans', sans-serif;
+    font-size:15px;
+    background:#fffdf7;
+    margin-bottom:14px;
+  }
+  input:focus, select:focus, button:focus-visible{outline:3px solid var(--mustard); outline-offset:2px;}
+
+  .code-badge{
+    font-family:'Baloo 2', sans-serif;
+    font-size:34px;
+    letter-spacing:6px;
+    background:var(--ink);
+    color:var(--paper);
+    padding:10px 18px;
+    border-radius:var(--radius-md);
+    display:inline-block;
+  }
+  .muted{color:#565b52; font-size:14px;}
+  .pill{
+    display:inline-flex; align-items:center; gap:6px;
+    background:var(--paper); border:2px solid var(--ink);
+    border-radius:999px; padding:6px 12px; font-size:13px; font-weight:600;
+  }
+  .cat-item{
+    display:flex; gap:8px; align-items:center; margin-bottom:8px;
+  }
+  .cat-item input{margin-bottom:0;}
+  .player-list{display:flex; flex-direction:column; gap:8px; margin:14px 0;}
+  .player-row{
+    display:flex; justify-content:space-between; align-items:center;
+    background:var(--paper); border:2px solid var(--ink); border-radius:var(--radius-sm);
+    padding:9px 14px;
+  }
+  .dot{width:10px;height:10px;border-radius:50%; display:inline-block; margin-right:8px;}
+
+  .letter-stage{
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+    padding:30px 10px 10px;
+  }
+  .big-letter{
+    font-family:'Baloo 2', sans-serif;
+    font-weight:800;
+    font-size:120px;
+    line-height:1;
+    background:var(--mustard);
+    color:var(--ink);
+    width:200px;height:200px;
+    border:4px solid var(--ink);
+    border-radius:36px;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 8px 0 var(--ink);
+    transform:rotate(-3deg);
+  }
+  .big-letter.spinning{animation: spin-letters .9s steps(9) infinite;}
+  @keyframes spin-letters{
+    0%{transform:rotate(-3deg) scale(1);}
+    50%{transform:rotate(3deg) scale(1.03);}
+    100%{transform:rotate(-3deg) scale(1);}
+  }
+  .countdown-num{
+    font-family:'Baloo 2', sans-serif;
+    font-size:90px;
+    color:var(--coral);
+  }
+
+  .timerbar-track{
+    width:100%; height:16px; background:var(--paper);
+    border:2px solid var(--ink); border-radius:999px; overflow:hidden; margin:10px 0 4px;
+  }
+  .timerbar-fill{height:100%; background:var(--teal); transition:width .3s linear;}
+
+  table.reveal-table{width:100%; border-collapse:collapse; margin-top:10px;}
+  table.reveal-table th, table.reveal-table td{
+    border:2px solid var(--ink); padding:8px 10px; text-align:left; font-size:14px;
+  }
+  table.reveal-table th{background:var(--ink); color:var(--paper); font-weight:600;}
+  td.ans{cursor:pointer;}
+  td.ans.valid-unique{background:#d6ecc9;}
+  td.ans.valid-dup{background:#fbe6ad;}
+  td.ans.invalid{background:#f6d2ca; text-decoration:line-through; color:#7a3126;}
+
+  .scoreboard-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 14px; border:2px solid var(--ink); border-radius:var(--radius-sm);
+    background:var(--paper); margin-bottom:8px; font-weight:600;
+  }
+  .scoreboard-row .score{font-family:'Baloo 2', sans-serif; font-size:20px; color:var(--teal-dark);}
+  .top1{background:var(--mustard);}
+
+  .banner{
+    background:var(--coral); color:#fff; border:2px solid #8f2e1c; border-radius:var(--radius-md);
+    padding:12px 16px; margin-bottom:14px; font-weight:600; text-align:center;
+  }
+  .link-btn{background:none; border:none; box-shadow:none; text-decoration:underline; padding:4px; color:var(--teal-dark);}
+  .small{font-size:13px;}
+  .center{text-align:center;}
+  .space-between{display:flex; justify-content:space-between; align-items:center;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* =========================================================
+   CONFIGURA AQUÍ TU PROYECTO DE FIREBASE
+   1. Ve a https://console.firebase.google.com → crea un proyecto (gratis)
+   2. En "Compilación" activa "Realtime Database" (modo de prueba está bien para empezar)
+   3. En Configuración del proyecto > Tus apps > Web (</>) copia el config y pégalo abajo
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "TU_API_KEY",
+  authDomain: "TU_PROYECTO.firebaseapp.com",
+  databaseURL: "https://TU_PROYECTO-default-rtdb.firebaseio.com",
+  projectId: "TU_PROYECTO",
+  storageBucket: "TU_PROYECTO.appspot.com",
+  messagingSenderId: "000000000000",
+  appId: "TU_APP_ID"
+};
+
+const FIREBASE_READY = !firebaseConfig.apiKey.startsWith("TU_");
+let db = null;
+if (FIREBASE_READY) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+}
+
+/* ---------------------------------------------------------
+   Utilidades
+--------------------------------------------------------- */
+const LETTERS = "A,B,C,D,E,F,G,H,I,J,K,L,M,N,Ñ,O,P,Q,R,S,T,U,V,W,X,Y,Z".split(",");
+const DEFAULT_CATEGORIES = ["Nombre", "Ciudad o país", "Fruta o verdura", "Marca", "Color", "Animal"];
+
+function normalize(str){
+  return (str || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/ñ/g,"n");
+}
+function makeRoomCode(){
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sin O/0, I/1 para evitar confusión
+  let code = "";
+  for(let i=0;i<4;i++) code += chars[Math.floor(Math.random()*chars.length)];
+  return code;
+}
+function uid(){
+  return 'p_' + Math.random().toString(36).slice(2,10);
+}
+function colorForIndex(i){
+  const palette = ["#1f6f6b","#e3a730","#e1573d","#6a3d5c","#3d6ae1","#3da35c"];
+  return palette[i % palette.length];
+}
+
+/* ---------------------------------------------------------
+   Estado
+--------------------------------------------------------- */
+const state = {
+  screen: 'home',
+  mode: null,           // 'online' | 'local'
+  roomCode: null,
+  playerId: null,
+  playerName: '',
+  isHost: false,
+  room: null,           // snapshot de /rooms/{code}
+  players: {},          // snapshot de /rooms/{code}/players
+  answersLocalDraft: {},// respuestas que estoy escribiendo (categoria -> texto)
+  overrides: {},        // overrides manuales de validez { round: { playerId: { cat: bool } } }
+  formCategories: [...DEFAULT_CATEGORIES],
+  roundDuration: 60,
+  countdownTimer: null,
+  writingTimer: null,
+};
+
+try {
+  const saved = localStorage.getItem('bachillerato_identity');
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    state.playerId = parsed.playerId;
+    state.playerName = parsed.playerName || '';
+  }
+} catch(e){}
+if (!state.playerId) state.playerId = uid();
+
+function saveIdentity(){
+  try{
+    localStorage.setItem('bachillerato_identity', JSON.stringify({playerId: state.playerId, playerName: state.playerName}));
+  }catch(e){}
+}
+
+/* ---------------------------------------------------------
+   Render root
+--------------------------------------------------------- */
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  app.appendChild(brandHeader());
+
+  if (!FIREBASE_READY) {
+    const b = document.createElement('div');
+    b.className = 'banner';
+    b.style.background = 'var(--mustard)';
+    b.style.color = 'var(--ink)';
+    b.style.borderColor = 'var(--ink)';
+    b.innerHTML = 'Modo online no configurado todavía: agrega tus datos de Firebase en el archivo para poder jugar entre varios dispositivos. Por ahora puedes probar el modo local.';
+    app.appendChild(b);
+  }
+
+  const screens = {
+    home: screenHome,
+    createRoom: screenCreateRoom,
+    joinRoom: screenJoinRoom,
+    lobby: screenLobby,
+    game: screenGame,
+    localSetup: screenLocalSetup,
+    localGame: screenLocalGame,
+  };
+  app.appendChild(screens[state.screen]());
+}
+
+function brandHeader(){
+  const wrap = document.createElement('div');
+  wrap.className = 'brand';
+  wrap.innerHTML = `<div class="tile">B</div><div><h1>Bachillerato</h1><p>el clásico juego de las letras</p></div>`;
+  return wrap;
+}
+
+function card(innerHTML){
+  const d = document.createElement('div');
+  d.className = 'card';
+  d.innerHTML = innerHTML;
+  return d;
+}
+
+/* ---------------------------------------------------------
+   HOME
+--------------------------------------------------------- */
+function screenHome(){
+  const wrap = document.createElement('div');
+  const c = card(`
+    <h2>¿Cómo quieres jugar?</h2>
+    <p class="muted">Crea una sala para que otros se unan con un código, o únete a una que ya exista.</p>
+    <div class="row" style="margin-top:14px;">
+      <button class="primary block" id="btn-create" ${FIREBASE_READY?'':'disabled'}>Crear sala online</button>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <button class="block" id="btn-join" ${FIREBASE_READY?'':'disabled'}>Unirme con un código</button>
+    </div>
+  `);
+  wrap.appendChild(c);
+
+  const c2 = card(`
+    <h3>Practicar en este dispositivo</h3>
+    <p class="muted">Sin conexión, pasando el mismo dispositivo entre jugadores por turno.</p>
+    <button class="ghost" id="btn-local">Jugar local</button>
+  `);
+  wrap.appendChild(c2);
+
+  setTimeout(()=>{
+    const bc = document.getElementById('btn-create');
+    const bj = document.getElementById('btn-join');
+    const bl = document.getElementById('btn-local');
+    if (bc) bc.onclick = ()=>{ state.screen='createRoom'; render(); };
+    if (bj) bj.onclick = ()=>{ state.screen='joinRoom'; render(); };
+    if (bl) bl.onclick = ()=>{ state.screen='localSetup'; render(); };
+  });
+  return wrap;
+}
+
+/* ---------------------------------------------------------
+   CREAR SALA (online)
+--------------------------------------------------------- */
+function screenCreateRoom(){
+  const wrap = document.createElement('div');
+  const catsHtml = state.formCategories.map((c,i)=>`
+    <div class="cat-item">
+      <input type="text" value="${escapeHtml(c)}" data-cat-index="${i}">
+      <button class="ghost" data-remove-cat="${i}" aria-label="Quitar categoría">✕</button>
+    </div>
+  `).join('');
+
+  const c = card(`
+    <h2>Crear sala</h2>
+    <label for="host-name">Tu nombre</label>
+    <input type="text" id="host-name" value="${escapeHtml(state.playerName)}" placeholder="Ej: Cheli">
+
+    <label>Categorías</label>
+    <div id="cat-list">${catsHtml}</div>
+    <button class="ghost" id="btn-add-cat" style="margin-bottom:14px;">+ agregar categoría</button>
+
+    <label for="round-duration">Duración de la ronda (segundos)</label>
+    <input type="number" id="round-duration" value="${state.roundDuration}" min="20" max="180">
+
+    <button class="primary block" id="btn-do-create">Crear sala</button>
+  `);
+  wrap.appendChild(c);
+  wrap.appendChild(backButton());
+
+  setTimeout(()=>{
+    document.getElementById('btn-add-cat').onclick = ()=>{
+      state.formCategories.push('Nueva categoría');
+      render();
+    };
+    document.querySelectorAll('[data-remove-cat]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const idx = parseInt(btn.getAttribute('data-remove-cat'));
+        state.formCategories.splice(idx,1);
+        render();
+      };
+    });
+    document.querySelectorAll('[data-cat-index]').forEach(inp=>{
+      inp.oninput = ()=>{
+        const idx = parseInt(inp.getAttribute('data-cat-index'));
+        state.formCategories[idx] = inp.value;
+      };
+    });
+    document.getElementById('btn-do-create').onclick = ()=>{
+      const name = document.getElementById('host-name').value.trim();
+      const duration = parseInt(document.getElementById('round-duration').value) || 60;
+      if (!name) { alert('Escribe tu nombre'); return; }
+      const cats = state.formCategories.map(c=>c.trim()).filter(Boolean);
+      if (cats.length === 0) { alert('Agrega al menos una categoría'); return; }
+      state.playerName = name;
+      state.roundDuration = duration;
+      saveIdentity();
+      createRoom(cats, duration);
+    };
+  });
+  return wrap;
+}
+
+function createRoom(categories, duration){
+  const code = makeRoomCode();
+  const roomRef = db.ref('rooms/' + code);
+  const playerData = {};
+  playerData[state.playerId] = { name: state.playerName, score: 0, joinedAt: firebase.database.ServerValue.TIMESTAMP };
+
+  roomRef.set({
+    hostId: state.playerId,
+    categories: categories,
+    roundDuration: duration,
+    usedLetters: [],
+    currentLetter: null,
+    roundNumber: 0,
+    phase: 'lobby',
+    createdAt: firebase.database.ServerValue.TIMESTAMP,
+    players: playerData
+  }).then(()=>{
+    state.roomCode = code;
+    state.isHost = true;
+    state.mode = 'online';
+    subscribeRoom(code);
+    state.screen = 'lobby';
+    render();
+  });
+}
+
+/* ---------------------------------------------------------
+   UNIRSE A SALA
+--------------------------------------------------------- */
+function screenJoinRoom(){
+  const wrap = document.createElement('div');
+  const c = card(`
+    <h2>Unirme a una sala</h2>
+    <label for="join-name">Tu nombre</label>
+    <input type="text" id="join-name" value="${escapeHtml(state.playerName)}" placeholder="Ej: Cheli">
+    <label for="join-code">Código de la sala</label>
+    <input type="text" id="join-code" placeholder="Ej: R7K2" maxlength="4" style="text-transform:uppercase; letter-spacing:4px; font-family:'Baloo 2';">
+    <button class="primary block" id="btn-do-join">Unirme</button>
+    <p class="muted small" id="join-error" style="margin-top:10px;"></p>
+  `);
+  wrap.appendChild(c);
+  wrap.appendChild(backButton());
+
+  setTimeout(()=>{
+    document.getElementById('btn-do-join').onclick = ()=>{
+      const name = document.getElementById('join-name').value.trim();
+      const code = document.getElementById('join-code').value.trim().toUpperCase();
+      if (!name || !code) { alert('Completa tu nombre y el código'); return; }
+      state.playerName = name;
+      saveIdentity();
+      db.ref('rooms/' + code).once('value').then(snap=>{
+        if (!snap.exists()){
+          document.getElementById('join-error').textContent = 'No encontramos esa sala. Revisa el código.';
+          return;
+        }
+        db.ref('rooms/' + code + '/players/' + state.playerId).set({
+          name: state.playerName, score: 0, joinedAt: firebase.database.ServerValue.TIMESTAMP
+        }).then(()=>{
+          state.roomCode = code;
+          state.isHost = (snap.val().hostId === state.playerId);
+          state.mode = 'online';
+          subscribeRoom(code);
+          state.screen = 'lobby';
+          render();
+        });
+      });
+    };
+  });
+  return wrap;
+}
+
+/* ---------------------------------------------------------
+   Suscripción en tiempo real a la sala
+--------------------------------------------------------- */
+function subscribeRoom(code){
+  db.ref('rooms/' + code).on('value', snap=>{
+    const val = snap.val();
+    if (!val) return;
+    state.room = val;
+    state.players = val.players || {};
+    onRoomUpdate();
+  });
+}
+
+function onRoomUpdate(){
+  const phase = state.room ? state.room.phase : 'lobby';
+  if (state.screen === 'lobby' && phase !== 'lobby') {
+    state.screen = 'game';
+  }
+  if (state.screen === 'game' && phase === 'lobby') {
+    state.screen = 'lobby';
+  }
+  render();
+  handlePhaseTimers();
+}
+
+/* ---------------------------------------------------------
+   LOBBY
+--------------------------------------------------------- */
+function screenLobby(){
+  const wrap = document.createElement('div');
+  const players = Object.entries(state.players || {});
+  const playerRows = players.map(([pid,p],i)=>`
+    <div class="player-row">
+      <span><span class="dot" style="background:${colorForIndex(i)}"></span>${escapeHtml(p.name)}${pid===state.room.hostId?' · anfitrión':''}</span>
+      ${pid===state.playerId ? '<span class="pill">tú</span>':''}
+    </div>
+  `).join('');
+
+  const catsPreview = (state.room.categories||[]).map(c=>`<span class="pill">${escapeHtml(c)}</span>`).join(' ');
+
+  const c = card(`
+    <p class="muted">Comparte este código con quienes se van a unir</p>
+    <div class="code-badge">${state.roomCode}</div>
+    <h3 style="margin-top:22px;">Jugadores</h3>
+    <div class="player-list">${playerRows}</div>
+    <h3>Categorías</h3>
+    <div class="row" style="margin-bottom:16px;">${catsPreview}</div>
+    <p class="muted small">Ronda: ${state.room.roundDuration}s</p>
+    ${state.isHost ? `<button class="primary block" id="btn-start-game" ${players.length<1?'disabled':''}>Girar la primera letra</button>` : `<p class="muted">Esperando a que el anfitrión inicie la partida…</p>`}
+  `);
+  wrap.appendChild(c);
+  wrap.appendChild(backButton(true));
+
+  setTimeout(()=>{
+    const b = document.getElementById('btn-start-game');
+    if (b) b.onclick = ()=> spinLetter();
+  });
+  return wrap;
+}
+
+/* ---------------------------------------------------------
+   Lógica de ronda (host controla las transiciones de fase)
+--------------------------------------------------------- */
+function pickNextLetter(){
+  let used = state.room.usedLetters || [];
+  let available = LETTERS.filter(l=>!used.includes(l));
+  if (available.length === 0){
+    used = [];
+    available = [...LETTERS];
+  }
+  const letter = available[Math.floor(Math.random()*available.length)];
+  return { letter, used: [...used, letter] };
+}
+
+function spinLetter(){
+  const { letter, used } = pickNextLetter();
+  const roundNumber = (state.room.roundNumber||0) + 1;
+  db.ref('rooms/' + state.roomCode).update({
+    currentLetter: letter,
+    usedLetters: used,
+    roundNumber: roundNumber,
+    phase: 'countdown',
+    countdownEndsAt: firebase.database.ServerValue.TIMESTAMP,
+    stopRequestedBy: null
+  }).then(()=>{
+    // fijamos el fin de cuenta regresiva 3s después, una vez conocemos el timestamp real
+    db.ref('rooms/' + state.roomCode + '/countdownEndsAt').once('value').then(s=>{
+      const base = s.val() || Date.now();
+      db.ref('rooms/' + state.roomCode).update({ countdownEndsAt: base + 3000 });
+    });
+  });
+}
+
+function handlePhaseTimers(){
+  clearTimeout(state.countdownTimer);
+  clearTimeout(state.writingTimer);
+  if (!state.room) return;
+  const phase = state.room.phase;
+
+  if (phase === 'countdown' && state.isHost){
+    const remaining = (state.room.countdownEndsAt||0) - Date.now();
+    state.countdownTimer = setTimeout(()=>{
+      const roundNumber = state.room.roundNumber;
+      db.ref('rooms/' + state.roomCode).update({
+        phase: 'writing',
+        writingEndsAt: Date.now() + (state.room.roundDuration*1000)
+      });
+      db.ref('rooms/' + state.roomCode + '/rounds/' + roundNumber + '/answers').remove();
+    }, Math.max(remaining, 100));
+  }
+
+  if (phase === 'writing' && state.isHost){
+    const remaining = (state.room.writingEndsAt||0) - Date.now();
+    state.writingTimer = setTimeout(()=>{
+      db.ref('rooms/' + state.roomCode).update({ phase: 'reveal' });
+    }, Math.max(remaining, 100));
+  }
+
+  if (phase === 'stopping' && state.isHost){
+    const remaining = (state.room.stopEndsAt||0) - Date.now();
+    state.writingTimer = setTimeout(()=>{
+      db.ref('rooms/' + state.roomCode).update({ phase: 'reveal' });
+    }, Math.max(remaining, 100));
+  }
+}
+
+function requestStop(){
+  if (state.room.phase !== 'writing') return;
+  db.ref('rooms/' + state.roomCode).update({
+    phase: 'stopping',
+    stopRequestedBy: state.playerId,
+    stopEndsAt: Date.now() + 3000
+  });
+}
+
+/* ---------------------------------------------------------
+   GAME (todas las sub-fases: countdown / writing / stopping / reveal)
+--------------------------------------------------------- */
+function screenGame(){
+  const wrap = document.createElement('div');
+  const phase = state.room.phase;
+
+  if (phase === 'countdown') wrap.appendChild(renderCountdown());
+  else if (phase === 'writing' || phase === 'stopping') wrap.appendChild(renderWriting());
+  else if (phase === 'reveal') wrap.appendChild(renderReveal());
+  else wrap.appendChild(card('<p>Cargando…</p>'));
+
+  return wrap;
+}
+
+function renderCountdown(){
+  const wrap = document.createElement('div');
+  const secsLeft = Math.max(0, Math.ceil(((state.room.countdownEndsAt||0) - Date.now())/1000));
+  wrap.innerHTML = `
+    <div class="letter-stage">
+      <div class="big-letter spinning">${state.room.currentLetter||'?'}</div>
+      <div class="countdown-num">${secsLeft>0?secsLeft:'¡YA!'}</div>
+      <p class="muted">Prepárate para escribir con la letra <strong>${state.room.currentLetter}</strong></p>
+    </div>
+  `;
+  setTimeout(()=>{
+    if (secsLeft>0) setTimeout(render, 300);
+  });
+  return wrap;
+}
+
+function renderWriting(){
+  const wrap = document.createElement('div');
+  const endsAt = state.room.phase === 'stopping' ? state.room.stopEndsAt : state.room.writingEndsAt;
+  const totalMs = state.room.phase === 'stopping' ? 3000 : state.room.roundDuration*1000;
+  const remainingMs = Math.max(0, (endsAt||0) - Date.now());
+  const pct = Math.max(0, Math.min(100, (remainingMs/totalMs)*100));
+  const secsLeft = Math.ceil(remainingMs/1000);
+
+  const stopBanner = state.room.phase === 'stopping'
+    ? `<div class="banner">¡${escapeHtml((state.players[state.room.stopRequestedBy]||{}).name || 'alguien')} gritó BASTA! Últimos segundos…</div>`
+    : '';
+
+  const catInputs = (state.room.categories||[]).map((cat,i)=>`
+    <label for="ans-${i}">${escapeHtml(cat)} con "${state.room.currentLetter}"</label>
+    <input type="text" id="ans-${i}" data-cat="${escapeHtml(cat)}" value="${escapeHtml(state.answersLocalDraft[cat]||'')}" ${state.room.phase==='stopping'?'':''}>
+  `).join('');
+
+  wrap.innerHTML = `
+    <div class="letter-stage" style="padding-top:6px;">
+      <div class="big-letter" style="width:90px;height:90px;font-size:52px;">${state.room.currentLetter}</div>
+    </div>
+    ${stopBanner}
+    <div class="card">
+      <div class="space-between">
+        <strong>${secsLeft}s</strong>
+        <span class="muted small">ronda ${state.room.roundNumber}</span>
+      </div>
+      <div class="timerbar-track"><div class="timerbar-fill" style="width:${pct}%"></div></div>
+      <div style="margin-top:14px;">${catInputs}</div>
+      <button class="warn block" id="btn-basta" ${state.room.phase==='stopping'?'disabled':''}>¡BASTA!</button>
+    </div>
+  `;
+
+  setTimeout(()=>{
+    (state.room.categories||[]).forEach((cat)=>{
+      const el = document.getElementById('ans-' + (state.room.categories.indexOf(cat)));
+    });
+    document.querySelectorAll('[data-cat]').forEach(inp=>{
+      inp.oninput = ()=>{
+        const cat = inp.getAttribute('data-cat');
+        state.answersLocalDraft[cat] = inp.value;
+        saveMyAnswers();
+      };
+    });
+    document.getElementById('btn-basta').onclick = requestStop;
+    setTimeout(render, 300);
+  });
+  return wrap;
+}
+
+let saveAnswersTimeout = null;
+function saveMyAnswers(){
+  clearTimeout(saveAnswersTimeout);
+  saveAnswersTimeout = setTimeout(()=>{
+    const round = state.room.roundNumber;
+    db.ref('rooms/'+state.roomCode+'/rounds/'+round+'/answers/'+state.playerId).set(state.answersLocalDraft);
+  }, 250);
+}
+
+/* ---------------------------------------------------------
+   REVEAL — calcular validez y puntajes
+--------------------------------------------------------- */
+function computeScoring(){
+  const round = state.room.roundNumber;
+  const cats = state.room.categories || [];
+  const letter = normalize(state.room.currentLetter);
+  const answersByPlayer = (state.room.rounds && state.room.rounds[round] && state.room.rounds[round].answers) || {};
+  const overridesByPlayer = (state.room.rounds && state.room.rounds[round] && state.room.rounds[round].overrides) || {};
+  const playerIds = Object.keys(state.players);
+
+  const grid = {}; // cat -> { playerId: {text, status, points} }
+  cats.forEach(cat=>{
+    const counts = {};
+    playerIds.forEach(pid=>{
+      const raw = (answersByPlayer[pid] && answersByPlayer[pid][cat]) || '';
+      const norm = normalize(raw);
+      const startsOk = norm.length>0 && norm[0] === letter[0];
+      if (startsOk) counts[norm] = (counts[norm]||0)+1;
+    });
+    grid[cat] = {};
+    playerIds.forEach(pid=>{
+      const raw = (answersByPlayer[pid] && answersByPlayer[pid][cat]) || '';
+      const norm = normalize(raw);
+      const startsOk = norm.length>0 && norm[0] === letter[0];
+      const manual = overridesByPlayer[pid] && overridesByPlayer[pid][cat];
+      let status, points;
+      if (manual === 'invalid') { status='invalid'; points=0; }
+      else if (!startsOk) { status='invalid'; points=0; }
+      else if (counts[norm] > 1) { status='dup'; points=5; }
+      else { status='unique'; points=10; }
+      if (manual === 'valid' && status === 'invalid'){ status='unique'; points=10; }
+      grid[cat][pid] = { text: raw, status, points };
+    });
+  });
+
+  const totalsThisRound = {};
+  playerIds.forEach(pid=>{
+    totalsThisRound[pid] = cats.reduce((sum,cat)=> sum + grid[cat][pid].points, 0);
+  });
+
+  return { grid, totalsThisRound };
+}
+
+function toggleOverride(pid, cat, currentStatus){
+  const round = state.room.roundNumber;
+  const newVal = currentStatus === 'invalid' ? 'valid' : 'invalid';
+  db.ref('rooms/'+state.roomCode+'/rounds/'+round+'/overrides/'+pid+'/'+cat).set(newVal);
+}
+
+function renderReveal(){
+  const wrap = document.createElement('div');
+  const { grid, totalsThisRound } = computeScoring();
+  const cats = state.room.categories || [];
+  const playerIds = Object.keys(state.players);
+
+  const headerCells = playerIds.map(pid=>`<th>${escapeHtml(state.players[pid].name)}</th>`).join('');
+  const rows = cats.map(cat=>{
+    const cells = playerIds.map(pid=>{
+      const cell = grid[cat][pid];
+      const cls = cell.status === 'unique' ? 'valid-unique' : cell.status === 'dup' ? 'valid-dup' : 'invalid';
+      return `<td class="ans ${cls}" data-pid="${pid}" data-cat="${escapeHtml(cat)}" data-status="${cell.status}">${escapeHtml(cell.text)||'—'} <span class="small">(${cell.points})</span></td>`;
+    }).join('');
+    return `<tr><th>${escapeHtml(cat)}</th>${cells}</tr>`;
+  }).join('');
+
+  const totalsRow = playerIds.map(pid=>`<td><strong>${totalsThisRound[pid]}</strong></td>`).join('');
+
+  const c = card(`
+    <h2>Letra ${state.room.currentLetter} — resultados</h2>
+    <p class="muted small">Toca una celda para marcarla válida o inválida a mano.</p>
+    <div style="overflow-x:auto;">
+      <table class="reveal-table">
+        <thead><tr><th></th>${headerCells}</tr></thead>
+        <tbody>${rows}<tr><th>Puntos de la ronda</th>${totalsRow}</tr></tbody>
+      </table>
+    </div>
+    ${state.isHost ? `<button class="primary block" id="btn-apply-round" style="margin-top:16px;">Sumar puntaje y continuar</button>` : `<p class="muted" style="margin-top:14px;">Esperando a que el anfitrión continúe…</p>`}
+  `);
+  wrap.appendChild(c);
+
+  setTimeout(()=>{
+    document.querySelectorAll('td.ans').forEach(td=>{
+      td.onclick = ()=> toggleOverride(td.getAttribute('data-pid'), td.getAttribute('data-cat'), td.getAttribute('data-status'));
+    });
+    const applyBtn = document.getElementById('btn-apply-round');
+    if (applyBtn) applyBtn.onclick = ()=> applyRoundScores(totalsThisRound);
+  });
+  return wrap;
+}
+
+function applyRoundScores(totalsThisRound){
+  const updates = {};
+  Object.entries(totalsThisRound).forEach(([pid, pts])=>{
+    const current = (state.players[pid] && state.players[pid].score) || 0;
+    updates['players/'+pid+'/score'] = current + pts;
+  });
+  updates['phase'] = 'lobby';
+  db.ref('rooms/'+state.roomCode).update(updates).then(()=>{
+    state.answersLocalDraft = {};
+  });
+}
+
+/* ---------------------------------------------------------
+   MODO LOCAL (mismo dispositivo, pasando turnos)
+--------------------------------------------------------- */
+const local = {
+  players: [],
+  scores: {},
+  categories: [...DEFAULT_CATEGORIES],
+  duration: 60,
+  usedLetters: [],
+  currentLetter: null,
+  round: 0,
+  answers: {}, // name -> {cat:text}
+  turnIndex: 0,
+  phase: 'setup', // setup | countdown | writing | reveal
+};
+
+function screenLocalSetup(){
+  const wrap = document.createElement('div');
+  const catsHtml = local.categories.map((c,i)=>`
+    <div class="cat-item">
+      <input type="text" value="${escapeHtml(c)}" data-lcat-index="${i}">
+      <button class="ghost" data-lremove-cat="${i}">✕</button>
+    </div>
+  `).join('');
+  const playersHtml = local.players.map((p,i)=>`
+    <div class="player-row"><span>${escapeHtml(p)}</span><button class="ghost" data-lremove-player="${i}">✕</button></div>
+  `).join('');
+
+  const c = card(`
+    <h2>Jugar local</h2>
+    <label for="local-player-name">Agregar jugador</label>
+    <div class="row" style="margin-bottom:10px;">
+      <input type="text" id="local-player-name" placeholder="Nombre" style="flex:1;">
+      <button id="btn-add-local-player">Agregar</button>
+    </div>
+    <div class="player-list">${playersHtml}</div>
+
+    <label>Categorías</label>
+    <div id="lcat-list">${catsHtml}</div>
+    <button class="ghost" id="btn-add-lcat" style="margin-bottom:14px;">+ agregar categoría</button>
+
+    <label for="local-duration">Duración de la ronda (segundos)</label>
+    <input type="number" id="local-duration" value="${local.duration}" min="20" max="180">
+
+    <button class="primary block" id="btn-start-local" ${local.players.length<1?'disabled':''}>Empezar</button>
+  `);
+  wrap.appendChild(c);
+  wrap.appendChild(backButton());
+
+  setTimeout(()=>{
+    document.getElementById('btn-add-local-player').onclick = ()=>{
+      const inp = document.getElementById('local-player-name');
+      if (inp.value.trim()) { local.players.push(inp.value.trim()); render(); }
+    };
+    document.querySelectorAll('[data-lremove-player]').forEach(b=>{
+      b.onclick = ()=>{ local.players.splice(parseInt(b.getAttribute('data-lremove-player')),1); render(); };
+    });
+    document.getElementById('btn-add-lcat').onclick = ()=>{ local.categories.push('Nueva categoría'); render(); };
+    document.querySelectorAll('[data-lremove-cat]').forEach(b=>{
+      b.onclick = ()=>{ local.categories.splice(parseInt(b.getAttribute('data-lremove-cat')),1); render(); };
+    });
+    document.querySelectorAll('[data-lcat-index]').forEach(inp=>{
+      inp.oninput = ()=>{ local.categories[parseInt(inp.getAttribute('data-lcat-index'))] = inp.value; };
+    });
+    document.getElementById('btn-start-local').onclick = ()=>{
+      local.duration = parseInt(document.getElementById('local-duration').value)||60;
+      local.categories = local.categories.map(c=>c.trim()).filter(Boolean);
+      local.scores = {}; local.players.forEach(p=>local.scores[p]=0);
+      state.screen = 'localGame';
+      localDrawLetter();
+    };
+  });
+  return wrap;
+}
+
+function localDrawLetter(){
+  let available = LETTERS.filter(l=>!local.usedLetters.includes(l));
+  if (available.length===0){ local.usedLetters=[]; available=[...LETTERS]; }
+  local.currentLetter = available[Math.floor(Math.random()*available.length)];
+  local.usedLetters.push(local.currentLetter);
+  local.round += 1;
+  local.answers = {};
+  local.turnIndex = 0;
+  local.phase = 'countdown';
+  render();
+  setTimeout(()=>{ local.phase='writing'; local.turnStart=Date.now(); render(); }, 3000);
+}
+
+function screenLocalGame(){
+  const wrap = document.createElement('div');
+  if (local.phase === 'countdown'){
+    wrap.innerHTML = `<div class="letter-stage"><div class="big-letter spinning">${local.currentLetter}</div><p class="muted">¡Prepárense!</p></div>`;
+    return wrap;
+  }
+  if (local.phase === 'writing'){
+    const playerName = local.players[local.turnIndex];
+    const catInputs = local.categories.map((cat,i)=>`
+      <label for="lans-${i}">${escapeHtml(cat)} con "${local.currentLetter}"</label>
+      <input type="text" id="lans-${i}" data-lcat="${escapeHtml(cat)}">
+    `).join('');
+    wrap.innerHTML = `
+      <div class="letter-stage" style="padding-top:6px;"><div class="big-letter" style="width:90px;height:90px;font-size:52px;">${local.currentLetter}</div></div>
+      <div class="card">
+        <p class="muted">Turno de <strong>${escapeHtml(playerName)}</strong> — pásale el dispositivo</p>
+        ${catInputs}
+        <button class="primary block" id="btn-local-done">Listo, siguiente jugador</button>
+      </div>
+    `;
+    setTimeout(()=>{
+      document.getElementById('btn-local-done').onclick = ()=>{
+        const ans = {};
+        document.querySelectorAll('[data-lcat]').forEach(inp=>{ ans[inp.getAttribute('data-lcat')] = inp.value; });
+        local.answers[playerName] = ans;
+        local.turnIndex += 1;
+        if (local.turnIndex >= local.players.length){
+          local.phase = 'reveal';
+        }
+        render();
+      };
+    });
+    return wrap;
+  }
+  if (local.phase === 'reveal'){
+    const letter = normalize(local.currentLetter);
+    const counts = {};
+    local.categories.forEach(cat=>{
+      counts[cat] = {};
+      local.players.forEach(p=>{
+        const norm = normalize((local.answers[p]||{})[cat]||'');
+        const ok = norm.length>0 && norm[0]===letter[0];
+        if (ok) counts[cat][norm] = (counts[cat][norm]||0)+1;
+      });
+    });
+    const totals = {}; local.players.forEach(p=>totals[p]=0);
+    const rows = local.categories.map(cat=>{
+      const cells = local.players.map(p=>{
+        const raw = (local.answers[p]||{})[cat]||'';
+        const norm = normalize(raw);
+        const ok = norm.length>0 && norm[0]===letter[0];
+        let pts = 0, cls='invalid';
+        if (ok && counts[cat][norm]>1){ pts=5; cls='valid-dup'; }
+        else if (ok){ pts=10; cls='valid-unique'; }
+        totals[p]+=pts;
+        return `<td class="${cls}">${escapeHtml(raw)||'—'} <span class="small">(${pts})</span></td>`;
+      }).join('');
+      return `<tr><th>${escapeHtml(cat)}</th>${cells}</tr>`;
+    }).join('');
+    const totalsRow = local.players.map(p=>`<td><strong>${totals[p]}</strong></td>`).join('');
+    local.players.forEach(p=> local.scores[p] += totals[p]);
+
+    const sorted = [...local.players].sort((a,b)=>local.scores[b]-local.scores[a]);
+    const scoreRows = sorted.map((p,i)=>`
+      <div class="scoreboard-row ${i===0?'top1':''}"><span>${escapeHtml(p)}</span><span class="score">${local.scores[p]}</span></div>
+    `).join('');
+
+    wrap.innerHTML = `
+      <div class="card">
+        <h2>Letra ${local.currentLetter} — resultados</h2>
+        <div style="overflow-x:auto;">
+          <table class="reveal-table">
+            <thead><tr><th></th>${local.players.map(p=>`<th>${escapeHtml(p)}</th>`).join('')}</tr></thead>
+            <tbody>${rows}<tr><th>Puntos de la ronda</th>${totalsRow}</tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Marcador</h3>
+        ${scoreRows}
+        <div class="row" style="margin-top:14px;">
+          <button class="primary" id="btn-local-next">Siguiente ronda</button>
+          <button class="ghost" id="btn-local-end">Terminar juego</button>
+        </div>
+      </div>
+    `;
+    setTimeout(()=>{
+      document.getElementById('btn-local-next').onclick = localDrawLetter;
+      document.getElementById('btn-local-end').onclick = ()=>{ state.screen='home'; local.phase='setup'; local.round=0; local.usedLetters=[]; render(); };
+    });
+    return wrap;
+  }
+  return wrap;
+}
+
+/* ---------------------------------------------------------
+   Helpers
+--------------------------------------------------------- */
+function escapeHtml(str){
+  return (str==null?'':String(str)).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function backButton(leaveRoom){
+  const b = document.createElement('button');
+  b.className = 'link-btn';
+  b.textContent = '← volver al inicio';
+  b.onclick = ()=>{
+    if (leaveRoom && state.roomCode && db){
+      db.ref('rooms/'+state.roomCode).off();
+    }
+    state.screen='home';
+    state.room=null; state.roomCode=null; state.mode=null;
+    render();
+  };
+  return b;
+}
+
+render();
+</script>
+</body>
+</html>
